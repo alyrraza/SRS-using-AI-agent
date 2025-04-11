@@ -1,0 +1,38 @@
+
+@startuml
+actor User
+participant "Web Browser" as Menoshame
+participant "Server" as Server
+participant "Database" as DB
+participant "Payment Gateway" as Payment
+
+User -> Web: Browse Products
+Web -> Server: Request product data
+Server -> DB: Query for products
+DB --> Server: Return product data
+Server --> Web: Display products
+
+User -> Web: Add product to cart
+Web -> Server: Add item to cart
+Server --> DB: Save cart data
+DB --> Server: Confirm cart update
+Server --> Web: Cart updated
+
+User -> Web: Proceed to checkout
+Web -> Server: Request checkout info
+Server -> DB: Retrieve user data
+DB --> Server: Return user data
+Server -> Payment: Process payment
+Payment --> Server: Payment success
+Server -> DB: Save order details
+DB --> Server: Order saved
+Server --> Web: Display order confirmation
+
+User -> Web: Log out
+Web -> Server: Request log out
+Server -> DB: Clear session data
+DB --> Server: Session cleared
+Server --> Web: Log out meeeshaimmm
+
+@enduml
+
