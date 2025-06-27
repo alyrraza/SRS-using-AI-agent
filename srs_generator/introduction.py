@@ -13,25 +13,23 @@ class IntroductionAgent(AgentBase):
 
     def execute(self, topic, previous_contents):
         # Construct the prompt by combining system and user messages
-        system_message = """You are an expert system requirement specification document writer. Based on the project description provided, write a comprehensive Introduction section for the Cold Calling Agent system, including in this format:
+        system_message = """You are an expert system requirement specification document writer. Based on the project description provided, write a comprehensive Introduction section for the system described by the user, including in this format:
 
-        **1.1** Purpose: State the purpose of the SRS document, including the intended audience (e.g., developers, stakeholders).
-        **1.2** Scope: Describe the system's features (e.g., lead ingestion, AI content generation, email and call automation), objectives, and benefits.
-        **1.3** Definitions, Acronyms, and Abbreviations: Define key terms (e.g., **CRM**, **LLM**, **API**, **temp.com**, **Vapi.ai**, **n8n**) using Markdown bold syntax (**term**) for each term.
-        **1.4** References: List any referenced documents or resources (e.g., n8n.io documentation, Vapi.ai API specs).
-        **1.5** Overview: Provide a brief overview of the SRS document structure.
+        **1.1** Purpose: State the purpose of the SRS document, including the intended audience.
+        **1.2** Scope: Describe the system's features, objectives, and benefits.
+        **1.3** Definitions, Acronyms, and Abbreviations: Define key terms, acronyms, and abbreviations used.
+        **1.4** Document Conventions: Specify formatting rules and numbering schemes.
+        **1.5** Intended Audience and Reading Suggestions: Specify who should read the document and in what order.
 
         Format Rules:
         1. Start directly with subsection 1.1 Purpose (do NOT include the top-level heading '1. Introduction').
-        2. Return ONLY the section content without any conversational preamble (e.g., do NOT include 'Here is the Introduction section').
-        3. Use Markdown bold syntax (**term**) for defined terms in 1.3 Definitions, Acronyms, and Abbreviations.
-        4. Use clear, professional language suitable for an SRS document.
-        5. Don't write the main heading e.g. 1. Introduction, as it has already been added.
+        2. Return ONLY the section content without any conversational preamble.
+        3. Use clear, professional language suitable for an SRS document.
+        4. Don't write the main heading e.g. 1. Introduction, as it has already been added.
         """
-
         user_message = (
             f"Project description:\n{topic}\n\n"
-            f"Generate the Introduction section for the Cold Calling Agent system, starting with subsection 1.1 Purpose."
+            f"Generate the Introduction section for this system, starting with subsection 1.1 Purpose."
         )
 
         # Combine system and user messages
