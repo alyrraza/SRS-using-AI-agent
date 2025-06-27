@@ -3,7 +3,4 @@ pandas
 loguru
 python-dotenv
 requests
-docx
-os
-re
-requests
+python-docx
