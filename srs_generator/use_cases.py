@@ -11,7 +11,7 @@ class UseCasesAgent(AgentBase):
         self.srs = SRSConcrete("SRSWriter", max_retries, verbose)
         load_dotenv()
         self.logger = logger
-
+    '''
     def call_gemini(self, prompt, temperature=0.3, max_tokens=2000):
         """Call Gemini API to generate content"""
         api_key = os.getenv('GEMINI_API_KEY')
@@ -40,23 +40,27 @@ class UseCasesAgent(AgentBase):
         except Exception as e:
             self.logger.error(f"Gemini API call failed: {str(e)}")
             return None
-
+    '''
     def execute(self, topic, previous_contents):
         # Construct the prompt by combining system and user messages
         system_message = """You are an expert system requirement specification document writer. Based on all previous sections provided, write a comprehensive Use Cases section that includes:
-
-        6. Use Cases:
         - Detailed scenarios for each primary feature or interaction.
         - Include the following for each use case:
 
-        6.1 Use Case Name (e.g., Real-Time Monitoring)
-        6.1.1 Actors: Users or systems interacting with the feature.
-        6.1.2 Description: Detailed scenario of the use case.
-        6.1.3 Preconditions: Conditions that must be met before the use case.
-        6.1.4 Postconditions: Expected state after the use case is executed.
-        6.1.5 Main Flow: Primary sequence of steps.
-        6.1.6 Alternate Flows: Variations or exceptions in the flow.
-        
+        **6.1 Use Case Name** (e.g., Real-Time Monitoring)
+        **6.1.1 Actors**: Users or systems interacting with the feature.
+        **6.1.2 Description**: Detailed scenario of the use case.
+        **6.1.3 Preconditions**: Conditions that must be met before the use case.
+        **6.1.4 Postconditions**: Expected state after the use case is executed.
+        **6.1.5 Main Flow**: Primary sequence of steps.
+        **6.1.6 Alternate Flows**: Variations or exceptions in the flow.
+        Format Rules:
+        1. Use clear, structured headings for each subsection and add double asterisks (e.g., **6.1 Use Case Name**, **6.1.1 Actors**).
+        2. Return ONLY the section content without any conversational preamble (e.g., do NOT include 'Here is the Overall Description section' or similar text).
+        3. Ensure content aligns with the provided introduction and project description.
+        4. Use clear, professional language suitable for an SRS document.
+        5. Don't write the main heading e.g. 6. Use Cases, as it has already been added.
+
         Ensure alignment with previously defined features and requirements."""
         
         user_message = (
@@ -67,15 +71,19 @@ class UseCasesAgent(AgentBase):
             f"Here are the external interfaces:\n{previous_contents['external_interfaces']}\n\n"
             f"Here are the non-functional requirements:\n{previous_contents['non_functional_requirements']}\n\n"
             "Please write the Use Cases section that aligns with all previous sections:"
+            "Ive already added the main heading e.g. 6. Use Cases, so you can start with the first subsection 6.1 Use Case Name."
         )
 
-        # Combine system and user messages into a single prompt
-        full_prompt = f"{system_message}\n\n{user_message}"
+        # Combine system and user messages
+        messages = [
+            self.format_message("system", system_message),
+            self.format_message("user", user_message)
+        ]
 
         # Get Use Cases content from Gemini
         use_cases_content = None
         for attempt in range(self.max_retries):
-            use_cases_content = self.call_gemini(full_prompt, temperature=0.3, max_tokens=2000)
+            use_cases_content = self.call_gemini(messages, temperature=0.3, max_tokens=2000)
             if use_cases_content:
                 break
             self.logger.warning(f"Attempt {attempt + 1} failed to generate use cases content")

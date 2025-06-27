@@ -1,3 +1,5 @@
+import time
+from loguru import logger
 from .first_page import SRSConcrete
 from .introduction import IntroductionAgent
 from .overall_description import OverallDescriptionAgent
@@ -6,65 +8,76 @@ from .external_interface_requirements import ExternalInterfaceAgent
 from .non_functional_requirements import NonFunctionalRequirementsAgent
 from .use_cases import UseCasesAgent
 from .system_models_diagrams import SystemModelsAgent
-from loguru import logger
 
 class SRSAgentManager:
-    def __init__(self, max_retries=2, verbose=True):
-        self.agents = {
-            "introduction": IntroductionAgent(max_retries=max_retries, verbose=verbose),
-            "overall_description": OverallDescriptionAgent(max_retries=max_retries, verbose=verbose),
-            "system_features": SystemFeaturesAgent(max_retries=max_retries, verbose=verbose),
-            "external_interfaces": ExternalInterfaceAgent(max_retries=max_retries, verbose=verbose),
-            "non_functional_requirements": NonFunctionalRequirementsAgent(max_retries=max_retries, verbose=verbose),
-            "use_cases": UseCasesAgent(max_retries=max_retries, verbose=verbose),
-            "system_models": SystemModelsAgent(max_retries=max_retries, verbose=verbose)
-        }
-        self.srs_concrete = SRSConcrete("SRSWriter", max_retries, verbose)
+    def __init__(self, name="SRSAgentManager", max_retries=5, verbose=True):
+        self.name = name
+        self.max_retries = max_retries
+        self.verbose = verbose
+        self.srs_writer = SRSConcrete("SRSWriter", max_retries, verbose)
+        self.introduction_agent = IntroductionAgent(max_retries, verbose)
+        self.overall_description_agent = OverallDescriptionAgent(max_retries, verbose)
+        self.system_features_agent = SystemFeaturesAgent(max_retries, verbose)
+        self.external_interface_agent = ExternalInterfaceAgent(max_retries, verbose)
+        self.non_functional_requirements_agent = NonFunctionalRequirementsAgent(max_retries, verbose)
+        self.use_cases_agent = UseCasesAgent(max_retries, verbose)
+        self.system_models_agent = SystemModelsAgent(max_retries, verbose)
+        self.logger = logger
 
-    def generate_srs(self, user_input, user_name, file_name):
+    def generate_srs(self, topic, user_name, file_name="SRS_document.docx"):
+        """
+        Orchestrates the generation of SRS document
+        """
         try:
-            logger.info("[SRSAgentManager] Starting SRS generation")
+            self.logger.info(f"[{self.name}] Starting SRS generation")
 
-            # Step 1: Create the First Page
-            logger.info("[SRSAgentManager] Creating first page")
-            self.srs_concrete.create_first_page(user_name, file_name)
+            # Create first page
+            self.logger.info(f"[{self.name}] Creating first page")
+            self.srs_writer.create_first_page(user_name=user_name, file_name=file_name)
 
-            # Step 2: Generate Introduction
-            logger.info("[SRSAgentManager] Generating Introduction")
-            intro_content = self.agents["introduction"].execute(user_input)
-
-            # Step 3: Generate Overall Description
-            logger.info("[SRSAgentManager] Generating Overall Description")
-            overall_desc_content = self.agents["overall_description"].execute(user_input, intro_content)
-
-            # Step 4: Generate System Features
-            logger.info("[SRSAgentManager] Generating System Features")
-            system_features_content = self.agents["system_features"].execute(user_input, overall_desc_content)
-
-            # Step 5: Generate External Interface Requirements
-            logger.info("[SRSAgentManager] Generating External Interface Requirements")
-            external_interfaces_content = self.agents["external_interfaces"].execute(user_input, system_features_content)
-
-            # Step 6: Generate Non-functional Requirements
-            logger.info("[SRSAgentManager] Generating Non-functional Requirements")
-            non_func_content = self.agents["non_functional_requirements"].execute(user_input, external_interfaces_content)
-
-            # Step 7: Generate Use Cases
-            logger.info("[SRSAgentManager] Generating Use Cases")
-            use_cases_content = self.agents["use_cases"].execute(user_input, non_func_content)
+            # Generate content for each section
+            contents = {}
             
-            self.srs_concrete.add_page(use_cases_content, file_name)
+            # Generate Introduction
+            self.logger.info(f"[{self.name}] Generating Introduction")
+            contents = self.introduction_agent.execute(topic, contents)
+            time.sleep(2)  # Reduced delay for better performance
 
-            # Step 8: Generate System Models and Diagrams
-            logger.info("[SRSAgentManager] Generating System Models and Diagrams")
-            system_models_content = self.agents["system_models"].execute(user_input, use_cases_content, file_name)
+            # Generate Overall Description
+            self.logger.info(f"[{self.name}] Generating Overall Description")
+            contents = self.overall_description_agent.execute(topic, contents)
+            time.sleep(2)
 
+            # Generate System Features
+            self.logger.info(f"[{self.name}] Generating System Features")
+            contents = self.system_features_agent.execute(topic, contents)
+            time.sleep(2)
 
-            logger.info("[SRSAgentManager] SRS document generation completed successfully")
-            
-            # Return the complete SRS content
-            return system_models_content
-        
+            # Generate External Interface Requirements
+            self.logger.info(f"[{self.name}] Generating External Interface Requirements")
+            contents = self.external_interface_agent.execute(topic, contents)
+            time.sleep(2)
+
+            # Generate Non-functional Requirements
+            self.logger.info(f"[{self.name}] Generating Non-functional Requirements")
+            contents = self.non_functional_requirements_agent.execute(topic, contents)
+            time.sleep(2)
+
+            # Generate Use Cases
+            self.logger.info(f"[{self.name}] Generating Use Cases")
+            contents = self.use_cases_agent.execute(topic, contents)
+            time.sleep(2)
+
+            # Write all contents to document
+            self.logger.info(f"[{self.name}] Writing contents to document")
+            self.srs_writer.add_page(contents, file_name)
+
+            # Generate System Models and Diagrams
+            self.logger.info(f"[{self.name}] Generating System Models and Diagrams")
+            contents = self.system_models_agent.execute(topic, contents, file_name)
+
+            self.logger.info(f"[{self.name}] SRS document generation completed successfully")
+            return file_name
         except Exception as e:
-            logger.error(f"[SRSAgentManager] Error during SRS generation: {e}")
+            self.logger.error(f"[{self.name}] Failed to generate SRS document: {str(e)}")
             raise

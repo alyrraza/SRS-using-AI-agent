@@ -8,6 +8,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 import re
+import time
 
 class SRSBase(ABC):
     def __init__(self, name, max_retries=2, verbose=True):
@@ -22,9 +23,8 @@ class SRSBase(ABC):
         pass
 
     @abstractmethod
-    def add_page(self, content):
+    def add_page(self, content, file_name):
         pass
-
 
     def save_document(self, file_name):
         retries = 0
@@ -39,7 +39,6 @@ class SRSBase(ABC):
                 retries += 1
                 logger.error(f"[{self.name}] Error saving document: {e}. Retry {retries}/{self.max_retries}")
         raise Exception(f"[{self.name}] Failed to save document after {self.max_retries} retries.")
-    
 
 class SRSConcrete(SRSBase):
     def __init__(self, name, max_retries=2, verbose=True):
@@ -95,10 +94,13 @@ class SRSConcrete(SRSBase):
 
     def parse_markdown_text(self, text):
         """Parse markdown-style formatting from text"""
+        if not isinstance(text, str):
+            logger.error(f"[{self.name}] parse_markdown_text expected a string, got {type(text).__name__}")
+            return []
+
         formatted_paragraphs = []
-        
         paragraphs = text.split('\n\n')
-        
+
         for para in paragraphs:
             if para.strip():
                 heading_match = self.heading_pattern.match(para.strip())
@@ -109,7 +111,7 @@ class SRSConcrete(SRSBase):
                         'level': para.count('#')
                     })
                     continue
-                
+
                 if self.bullet_pattern.search(para):
                     bullet_points = []
                     for line in para.split('\n'):
@@ -121,16 +123,20 @@ class SRSConcrete(SRSBase):
                         'points': bullet_points
                     })
                     continue
-                
+
                 formatted_paragraphs.append({
                     'type': 'paragraph',
                     'text': para.strip()
                 })
-        
+
         return formatted_paragraphs
 
     def add_formatted_text(self, paragraph, text):
         """Add text to paragraph with bold formatting"""
+        if not isinstance(text, str):
+            logger.error(f"[{self.name}] add_formatted_text expected string but got {type(text).__name__}")
+            return
+
         remaining_text = text
         while remaining_text:
             bold_match = self.bold_pattern.search(remaining_text)
@@ -138,12 +144,12 @@ class SRSConcrete(SRSBase):
                 before_bold = remaining_text[:bold_match.start()]
                 if before_bold:
                     paragraph.add_run(before_bold)
-                
+
                 bold_text = bold_match.group(1) or bold_match.group(2)
                 run = paragraph.add_run(bold_text)
                 run.bold = True
                 run.font.name = 'Times New Roman'
-                
+
                 remaining_text = remaining_text[bold_match.end():]
             else:
                 paragraph.add_run(remaining_text)
@@ -170,16 +176,34 @@ class SRSConcrete(SRSBase):
                 if key not in content:
                     continue
                 section_content = content[key]
+
+                # Defensive check: section_content must be a string
+                if not isinstance(section_content, str):
+                    # Try to extract string if it's a dict with a single string value (common agent bug)
+                    if isinstance(section_content, dict):
+                        # Look for the first string value in the dict
+                        str_val = next((v for v in section_content.values() if isinstance(v, str)), None)
+                        if str_val:
+                            logger.warning(f"[{self.name}] Section '{key}' was a dict, using first string value.")
+                            section_content = str_val
+                        else:
+                            logger.error(f"[{self.name}] Expected string for section '{key}', got {type(section_content).__name__} instead.")
+                            continue
+                    else:
+                        logger.error(f"[{self.name}] Expected string for section '{key}', got {type(section_content).__name__} instead.")
+                        continue
+
+                logger.info(f"[{self.name}] Writing section '{key}' with content: {repr(section_content)[:200]}")
+                
+
                 formatted_content = self.parse_markdown_text(section_content)
+
                 # Add numbered heading
                 self.doc.add_heading(f"{section_num}. {key.replace('_', ' ').title()}", level=1)
-                sub_count = 1
+
+                # Only add paragraphs and bullets, skip subheadings from LLM output
                 for item in formatted_content:
-                    if item['type'] == 'heading':
-                        # Subheading numbering (e.g., 3.1, 3.2, etc.)
-                        self.doc.add_heading(f"{section_num}.{sub_count} {item['text']}", level=2)
-                        sub_count += 1
-                    elif item['type'] == 'paragraph':
+                    if item['type'] == 'paragraph':
                         para = self.doc.add_paragraph()
                         self.add_formatted_text(para, item['text'])
                     elif item['type'] == 'bullets':
@@ -189,5 +213,6 @@ class SRSConcrete(SRSBase):
 
             self.save_document(file_name)
         except Exception as e:
-            logger.error(f"[{self.name}] Error in add_page: {e}")
+            import traceback
+            logger.error(f"[{self.name}] Error in add_page: {e}\n{traceback.format_exc()}")
             raise

@@ -4,12 +4,10 @@ from .rag import AgentBase
 from docx.shared import Inches
 from loguru import logger
 import re
-import requests
 from dotenv import load_dotenv
 
-
 class SystemModelsAgent(AgentBase):
-    def __init__(self, max_retries=2, verbose=True):
+    def __init__(self, max_retries=5, verbose=True):  # Increased retries for robustness
         super().__init__(name="SystemModelsAgent", max_retries=max_retries, verbose=verbose)
         load_dotenv()
         self.logger = logger
@@ -118,34 +116,13 @@ class SystemModelsAgent(AgentBase):
                              @enduml"""
         }
         self.diagrams = {}
-        
-    def call_gemini(self, prompt):
-        """Call Gemini API to generate PlantUML code"""
-        api_key = os.getenv('GEMINI_API_KEY')
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY environment variable not set")
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-        headers = {'Content-Type': 'application/json'}
-        payload = {
-            "contents": [{
-                "parts": [{"text": prompt}]
-            }]
-        }
-
-        try:
-            response = requests.post(url, headers=headers, json=payload)
-            response.raise_for_status()
-            
-            json_response = response.json()
-            text = json_response['candidates'][0]['content']['parts'][0]['text']
-            return text
-        except Exception as e:
-            self.logger.error(f"Gemini API call failed: {str(e)}")
-            return None
-    
     def validate_diagram_code(self, code, diagram_type):
-        """Use Gemini to validate the generated PlantUML code"""
+        """Validate the generated PlantUML code using Gemini"""
+        if not code:
+            self.logger.error(f"[{self.name}] No PlantUML code provided for {diagram_type}")
+            return False
+
         validation_prompt = f"""You are a PlantUML expert validator. Review this {diagram_type} code for correctness.
         
         Code to validate:
@@ -158,22 +135,32 @@ class SystemModelsAgent(AgentBase):
         4. Required elements for {diagram_type}
         5. Proper relationship definitions
         
-        Respond with ONLY 'VALID' or 'INVALID' followed by a brief reason.
-        """
+        Respond with ONLY 'VALID' or 'INVALID' followed by a brief reason."""
         
-        validation_result = self.call_gemini(validation_prompt)
+        messages = [
+            self.format_message("system", validation_prompt),
+            self.format_message("user", "Please validate the provided PlantUML code.")
+        ]
+
+        for attempt in range(self.max_retries):
+            validation_result = self.call_gemini(messages, temperature=0.3, max_tokens=500)
+            if validation_result and 'VALID' in validation_result.upper():
+                self.logger.info(f"[{self.name}] {diagram_type} code validated successfully")
+                return True
+            self.logger.warning(f"[{self.name}] Validation attempt {attempt + 1} failed: {validation_result or 'No response'}")
         
-        if validation_result and 'VALID' in validation_result.upper():
-            return True
-        
-        self.logger.warning(f"Validation failed: {validation_result}")
+        self.logger.error(f"[{self.name}] Validation failed for {diagram_type} after {self.max_retries} attempts")
         return False
 
     def extract_plantuml(self, text):
         """Extract PlantUML code between @startuml and @enduml tags"""
+        if not text:
+            self.logger.error(f"[{self.name}] No text provided to extract PlantUML code")
+            return None
+        
         match = re.search(r'(@startuml[\s\S]*?@enduml)', text, re.DOTALL)
         if not match:
-            self.logger.error("No valid PlantUML code found in the response")
+            self.logger.error(f"[{self.name}] No valid PlantUML code found in the response")
             return None
         
         code = match.group(1).strip()
@@ -181,66 +168,56 @@ class SystemModelsAgent(AgentBase):
         code = '\n'.join(line.strip() for line in code.split('\n'))
         return code
 
-
-    def validate_plantuml_code(self, code, diagram_type):
-        """Validate the generated PlantUML code"""
-        if not code:
-            return False
-            
-        # Basic validation checks
-        required_elements = {
-            "ActivityDiagram": ["start", "stop", ":"],
-            "SequenceDiagram": ["actor", "->", "-->"],
-            "ClassDiagram": ["class", "{", "}"]
-        }
-        
-        elements = required_elements.get(diagram_type, [])
-        return all(element in code.lower() for element in elements)
-
-    def generate_diagram_code(self, diagram_type, use_cases):
+    def generate_diagram_code(self, diagram_type, topic, previous_contents):
         """Generate PlantUML code using Gemini with improved prompting"""
-        generation_prompt = f"""You are an expert PlantUML diagram generator.
-        
-        Use Cases:
-        {use_cases}
-        
-        Task: Generate a {diagram_type} based on these use cases.
-        
-        Instructions:
-        {self.diagram_types[diagram_type]}
-        
-        Additional Requirements:
-        1. Generate ONLY the PlantUML code
-        2. Ensure all elements are properly connected
-        3. Include comprehensive error handling
-        4. Show all major system states and transitions
-        5. Use clear and descriptive labels
-        
-        Important: Return ONLY the PlantUML code, no explanations."""
+        if 'use_cases' not in previous_contents:
+            self.logger.error(f"[{self.name}] No use cases found in previous contents")
+            return None
 
-        for attempt in range(3):
+        system_message = self.diagram_types.get(diagram_type, "")
+        user_message = (
+            f"Here is the project description:\n{topic}\n\n"
+            f"Here is the introduction:\n{previous_contents['introduction']}\n\n"
+            f"Here is the overall description:\n{previous_contents['overall_description']}\n\n"
+            f"Here are the system features:\n{previous_contents['system_features']}\n\n"
+            f"Here are the external interfaces:\n{previous_contents['external_interfaces']}\n\n"
+            f"Here are the non-functional requirements:\n{previous_contents['non_functional_requirements']}\n\n"
+            f"Here are the use cases:\n{previous_contents['use_cases']}\n\n"
+            f"Generate ONLY the PlantUML code for a {diagram_type}, ensuring all elements are properly connected, with clear labels, and no explanations."
+        )
+
+        messages = [
+            self.format_message("system", system_message),
+            self.format_message("user", user_message)
+        ]
+
+        for attempt in range(self.max_retries):
             try:
-                # Generate code
-                response = self.call_gemini(generation_prompt)
-                plantuml_code = self.extract_plantuml(response)
-                
-                if not plantuml_code:
+                response = self.call_gemini(messages, temperature=0.3, max_tokens=2000)
+                if not response:
+                    self.logger.error(f"[{self.name}] No response from Gemini API for {diagram_type} in attempt {attempt + 1}")
                     continue
                 
-                # Validate generated code
+                plantuml_code = self.extract_plantuml(response)
+                if not plantuml_code:
+                    self.logger.error(f"[{self.name}] Failed to extract PlantUML code for {diagram_type} in attempt {attempt + 1}")
+                    continue
+                
                 if self.validate_diagram_code(plantuml_code, diagram_type):
+                    self.logger.info(f"[{self.name}] Successfully generated valid PlantUML code for {diagram_type}")
                     return plantuml_code
-                    
-                self.logger.warning(f"Attempt {attempt + 1}: Generated code failed validation")
+                
+                self.logger.warning(f"[{self.name}] Attempt {attempt + 1}: Generated code failed validation for {diagram_type}")
             except Exception as e:
-                self.logger.error(f"Error in attempt {attempt + 1}: {str(e)}")
+                self.logger.error(f"[{self.name}] Error in attempt {attempt + 1} for {diagram_type}: {str(e)}")
         
+        self.logger.error(f"[{self.name}] Failed to generate valid PlantUML code for {diagram_type} after {self.max_retries} attempts")
         return None
-
 
     def create_diagram(self, name, plantuml_code):
         """Generate PNG from PlantUML code with robust error handling"""
         if not plantuml_code:
+            self.logger.error(f"[{self.name}] No PlantUML code provided for {name}")
             return None
             
         try:
@@ -257,7 +234,7 @@ class SystemModelsAgent(AgentBase):
                 
             # Verify the saved file
             if not os.path.exists(puml_file):
-                self.logger.error(f"Failed to save PUML file: {puml_file}")
+                self.logger.error(f"[{self.name}] Failed to save PUML file: {puml_file}")
                 return None
                 
             # Find PlantUML jar with expanded search paths
@@ -276,7 +253,7 @@ class SystemModelsAgent(AgentBase):
                     break
                     
             if not jar_path:
-                self.logger.error(f"PlantUML jar not found in paths: {jar_paths}")
+                self.logger.error(f"[{self.name}] PlantUML jar not found in paths: {jar_paths}")
                 return None
                 
             # Set up Java command with explicit options
@@ -295,8 +272,8 @@ class SystemModelsAgent(AgentBase):
             ]
             
             # Log the exact file contents being processed
-            self.logger.debug(f"Processing PlantUML file: {puml_file}")
-            self.logger.debug("File contents:")
+            self.logger.debug(f"[{self.name}] Processing PlantUML file: {puml_file}")
+            self.logger.debug(f"[{self.name}] File contents:")
             with open(puml_file, 'r', encoding='utf-8') as f:
                 self.logger.debug(f.read())
                 
@@ -311,36 +288,37 @@ class SystemModelsAgent(AgentBase):
                 
                 # Always log command output for debugging
                 if result.stdout:
-                    self.logger.debug(f"PlantUML stdout: {result.stdout}")
+                    self.logger.debug(f"[{self.name}] PlantUML stdout: {result.stdout}")
                 if result.stderr:
-                    self.logger.debug(f"PlantUML stderr: {result.stderr}")
+                    self.logger.debug(f"[{self.name}] PlantUML stderr: {result.stderr}")
                     
                 # Check specific error codes
                 if result.returncode == 200:
-                    self.logger.error("PlantUML syntax error detected")
+                    self.logger.error(f"[{self.name}] PlantUML syntax error detected")
                     # Try to fix common syntax issues
                     fixed_code = self._fix_common_plantuml_issues(plantuml_code)
                     if fixed_code != plantuml_code:
-                        self.logger.info("Attempting with fixed PlantUML code")
+                        self.logger.info(f"[{self.name}] Attempting with fixed PlantUML code")
                         return self.create_diagram(name, fixed_code)
                 elif result.returncode != 0:
-                    self.logger.error(f"PlantUML execution failed with code: {result.returncode}")
+                    self.logger.error(f"[{self.name}] PlantUML execution failed with code: {result.returncode}")
                     return None
                     
                 # Verify PNG was generated
                 png_path = os.path.join("diagrams", f"{name}.png")
                 if os.path.exists(png_path):
+                    self.logger.info(f"[{self.name}] Successfully generated {name} image at {png_path}")
                     return png_path
                 else:
-                    self.logger.error("PNG file not generated despite successful execution")
+                    self.logger.error(f"[{self.name}] PNG file not generated despite successful execution")
                     return None
                     
             except Exception as e:
-                self.logger.error(f"Error executing PlantUML: {str(e)}")
+                self.logger.error(f"[{self.name}] Error executing PlantUML: {str(e)}")
                 return None
                 
         except Exception as e:
-            self.logger.error(f"Error in create_diagram: {str(e)}")
+            self.logger.error(f"[{self.name}] Error in create_diagram: {str(e)}")
             return None
     
     def _normalize_plantuml_code(self, code):
@@ -401,33 +379,29 @@ class SystemModelsAgent(AgentBase):
             
         return fixed_code
     
-    def add_diagrams_to_doc(self, doc, use_cases):
+    def add_diagrams_to_doc(self, doc, topic, previous_contents):
         """Generate diagrams and add them to Word document without duplication"""
-        
         # Check if section already exists
         section_exists = False
-        section_paragraph = None
-        
-        for i, paragraph in enumerate(doc.paragraphs):
-            if paragraph.text == "System Models and Diagrams":
+        for paragraph in doc.paragraphs:
+            if paragraph.text == "7. System Models and Diagrams":
                 section_exists = True
-                section_paragraph = paragraph
                 break
         
         if not section_exists:
             # Add new section if it doesn't exist
-            doc.add_heading("System Models and Diagrams", level=1)
+            doc.add_heading("7. System Models and Diagrams", level=1)
             doc.add_paragraph("This section presents the system models using various UML diagrams to visualize different aspects of the system.")
         else:
-            # If section exists, move to the end of the document to append
-            doc.add_paragraph()  # Add spacing after existing content
-        
+            # If section exists, add spacing
+            doc.add_paragraph()
+
         # Generate and add each diagram
-        for diagram_type in self.diagram_types:
+        for index, diagram_type in enumerate(self.diagram_types, 1):
             # Check if this diagram type already exists
             diagram_exists = False
             for paragraph in doc.paragraphs:
-                if paragraph.text == diagram_type:
+                if paragraph.text == f"7.{index} {diagram_type}":
                     diagram_exists = True
                     break
             
@@ -436,8 +410,11 @@ class SystemModelsAgent(AgentBase):
                 continue
                 
             # Generate PlantUML code using LLM
-            plantuml_code = self.generate_diagram_code(diagram_type, use_cases)
+            plantuml_code = self.generate_diagram_code(diagram_type, topic, previous_contents)
             if not plantuml_code:
+                self.logger.warning(f"[{self.name}] Failed to generate PlantUML code for {diagram_type}, skipping...")
+                doc.add_heading(f"7.{index} {diagram_type}", level=2)
+                doc.add_paragraph(f"Failed to generate {diagram_type} image.")
                 continue
                 
             # Store generated code
@@ -446,10 +423,13 @@ class SystemModelsAgent(AgentBase):
             # Create diagram
             png_path = self.create_diagram(diagram_type, plantuml_code)
             if not png_path:
+                self.logger.warning(f"[{self.name}] Failed to create diagram image for {diagram_type}, adding placeholder...")
+                doc.add_heading(f"7.{index} {diagram_type}", level=2)
+                doc.add_paragraph(f"Failed to generate {diagram_type} image.")
                 continue
                 
             # Add to document
-            doc.add_heading(f"{diagram_type}", level=2)
+            doc.add_heading(f"7.{index} {diagram_type}", level=2)
             doc.add_picture(png_path, width=Inches(6))
             doc.add_paragraph()  # Add spacing
 
@@ -459,15 +439,13 @@ class SystemModelsAgent(AgentBase):
             self.logger.error(f"[{self.name}] No use cases found in previous contents")
             return previous_contents
 
-        use_cases = previous_contents['use_cases']
-        
         try:
             # Load existing document
             from docx import Document
             doc = Document(file_name) if os.path.exists(file_name) else Document()
             
             # Generate and add diagrams
-            self.add_diagrams_to_doc(doc, use_cases)
+            self.add_diagrams_to_doc(doc, topic, previous_contents)
             
             # Save document
             doc.save(file_name)

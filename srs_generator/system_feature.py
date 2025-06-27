@@ -11,7 +11,7 @@ class SystemFeaturesAgent(AgentBase):
         self.srs = SRSConcrete("SRSWriter", max_retries, verbose)
         load_dotenv()
         self.logger = logger
-
+    '''
     def call_gemini(self, prompt, temperature=0.3, max_tokens=2000):
         """Call Gemini API to generate content"""
         api_key = os.getenv('GEMINI_API_KEY')
@@ -40,7 +40,7 @@ class SystemFeaturesAgent(AgentBase):
         except Exception as e:
             self.logger.error(f"Gemini API call failed: {str(e)}")
             return None
-
+    '''
     def execute(self, topic, previous_contents):
         # Construct the prompt by combining system and user messages
         system_message = """You are an expert system requirement specification document writer. Based on the introduction and overall description provided, write a detailed system features section.
@@ -52,11 +52,17 @@ class SystemFeaturesAgent(AgentBase):
         Input: Required data inputs for this feature
         Output: Expected outputs or results
         Priority: Importance level (High, Medium, Low)
-        Functional Requirements: Detailed requirements numbered as FR 3.x.1, FR 3.x.2, etc.
+        Functional Requirements: Detailed requirements numbered as **FR 3.x.1**, **FR 3.x.2**, etc.
 
         Format each feature consistently using the structure above.
         Ensure features align with the product functions mentioned in the overall description.
-        Number features as 3.1, 3.2, etc.
+        Number features as **3.1**, **3.2**, etc.
+        Format Rules:
+        1. Use clear, structured headings for each subsection and add double asterisks (e.g., **3.1 Feature Name**, **3.2 Description**).
+        2. Return ONLY the section content without any conversational preamble (e.g., do NOT include 'Here is the Overall Description section' or similar text).
+        3. Ensure content aligns with the provided introduction and project description.
+        4. Use clear, professional language suitable for an SRS document.
+        5. Don't write the main heading e.g. 3. System Features, as it has already been added.
         """
         
         user_message = (
@@ -64,15 +70,20 @@ class SystemFeaturesAgent(AgentBase):
             f"Here is the introduction:\n{previous_contents['introduction']}\n\n"
             f"Here is the overall description:\n{previous_contents['overall_description']}\n\n"
             "Please write the System Features section that aligns with these previous sections:"
+            "Ive already added the main heading e.g. 3. System Features, so you can start with the first subsection 3.1 Feature Name."
         )
 
         # Combine system and user messages into a single prompt
-        full_prompt = f"{system_message}\n\n{user_message}"
+        # Combine system and user messages
+        messages = [
+            self.format_message("system", system_message),
+            self.format_message("user", user_message)
+        ]
 
         # Get system features content from Gemini
         features_content = None
         for attempt in range(self.max_retries):
-            features_content = self.call_gemini(full_prompt, temperature=0.3, max_tokens=2000)
+            features_content = self.call_gemini(messages, temperature=0.3, max_tokens=2000)
             if features_content:
                 break
             self.logger.warning(f"Attempt {attempt + 1} failed to generate system features content")
