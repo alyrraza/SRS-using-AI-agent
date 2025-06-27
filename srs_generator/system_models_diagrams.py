@@ -14,7 +14,7 @@ class SystemModelsAgent(AgentBase):
         load_dotenv()
         self.logger = logger
         self.diagram_types = {
-            "ActivityDiagram": """Generate a detailed PlantUML Activity Diagram that shows the complete flow of actions for these use cases.
+            "ActivityDiagram": """Generate a detailed PlantUML Activity Diagram that shows the complete flow of actions for these use cases and with no errors.
                                 Context: You are an expert UML designer. Create a comprehensive activity diagram that captures all workflows.
                                 
                                 Requirements:
@@ -47,8 +47,8 @@ class SystemModelsAgent(AgentBase):
                                 stop
                                 @enduml""",
             
-            "SequenceDiagram": """Generate a detailed PlantUML Sequence Diagram showing interactions between components.
-                                Context: You are an expert in system design. Create a sequence diagram showing all interactions.
+            "SequenceDiagram": """Generate a detailed PlantUML Sequence Diagram showing interactions between components and without any error.
+                                Context: You are an expert in system design. Create a sequence diagram showing all interactions without error.
                                 
                                 Requirements:
                                 1. Include all system components and actors
@@ -82,9 +82,9 @@ class SystemModelsAgent(AgentBase):
                                 FE --> User: Show Dashboard
                                 deactivate FE
                                 @enduml""",
-            
-            "ClassDiagram": """Generate a comprehensive PlantUML Class Diagram showing system structure.
-                             Context: You are an expert in object-oriented design. Create a detailed class diagram.
+
+            "ClassDiagram": """Generate a comprehensive PlantUML Class Diagram showing system structure and without any error.
+                             Context: You are an expert in object-oriented design. Create a detailed class diagram without any error.
                              
                              Requirements:
                              1. Include all major classes

@@ -5,6 +5,8 @@ from loguru import logger
 from docx import Document
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 import re
 
 class SRSBase(ABC):
@@ -46,6 +48,23 @@ class SRSConcrete(SRSBase):
         self.heading_pattern = re.compile(r'^#+\s+(.*?)$', re.MULTILINE)
         self.bullet_pattern = re.compile(r'^\s*[-*]\s+(.*?)$', re.MULTILINE)
 
+    def add_table_of_contents(self):
+        """Insert a Table of Contents field at the beginning of the document."""
+        paragraph = self.doc.add_paragraph()
+        run = paragraph.add_run()
+        fldChar = OxmlElement('w:fldChar')
+        fldChar.set(qn('w:fldCharType'), 'begin')
+        instrText = OxmlElement('w:instrText')
+        instrText.text = 'TOC \\o "1-3" \\h \\z \\u'
+        fldChar2 = OxmlElement('w:fldChar')
+        fldChar2.set(qn('w:fldCharType'), 'separate')
+        fldChar3 = OxmlElement('w:fldChar')
+        fldChar3.set(qn('w:fldCharType'), 'end')
+        run._r.append(fldChar)
+        run._r.append(instrText)
+        run._r.append(fldChar2)
+        run._r.append(fldChar3)
+
     def create_first_page(self, user_name, file_name):
         try:
             logger.info(f"[{self.name}] Creating first page for {user_name}")
@@ -65,6 +84,10 @@ class SRSConcrete(SRSBase):
             name_run = name_paragraph.add_run(f'Name: {user_name}')
             name_run.font.name = 'Times New Roman'
             name_run.font.size = Pt(12)
+
+            # Add Table of Contents after the first page
+            self.add_table_of_contents()
+
             self.save_document(file_name)
         except Exception as e:
             logger.error(f"[{self.name}] Error in create_first_page: {e}")
@@ -133,55 +156,37 @@ class SRSConcrete(SRSBase):
             # Add page break
             self.doc.add_page_break()
 
-            # Define which keys need to be treated as subheadings (level 2 headings)
-            subsections = [
-                'introduction',
-                'external_interfaces', 
-                'use_cases', 
-                'overall_description', 
-                'non_functional_requirements'
+            # Define section order and numbers
+            section_order = [
+                ('introduction', '1'),
+                ('overall_description', '2'),
+                ('system_features', '3'),
+                ('external_interfaces', '4'),
+                ('non_functional_requirements', '5'),
+                ('use_cases', '6'),
             ]
 
-            # Iterate over all content keys (including subheadings like external_interfaces)
-            for key, section_content in content.items():
-                # Skip the 'heading' key as it was already handled
-                if key == 'heading':
+            for key, section_num in section_order:
+                if key not in content:
                     continue
-
-                # Use parse_markdown_text to format content properly
+                section_content = content[key]
                 formatted_content = self.parse_markdown_text(section_content)
+                # Add numbered heading
+                self.doc.add_heading(f"{section_num}. {key.replace('_', ' ').title()}", level=1)
+                sub_count = 1
+                for item in formatted_content:
+                    if item['type'] == 'heading':
+                        # Subheading numbering (e.g., 3.1, 3.2, etc.)
+                        self.doc.add_heading(f"{section_num}.{sub_count} {item['text']}", level=2)
+                        sub_count += 1
+                    elif item['type'] == 'paragraph':
+                        para = self.doc.add_paragraph()
+                        self.add_formatted_text(para, item['text'])
+                    elif item['type'] == 'bullets':
+                        for point in item['points']:
+                            bullet_para = self.doc.add_paragraph(style='List Bullet')
+                            self.add_formatted_text(bullet_para, point)
 
-                # If the key is in subsections, treat it as a subheading (Level 2 heading)
-                if key in subsections:
-                    # Add the subheading (key as title)
-                    self.doc.add_heading(key.replace('_', ' ').title(), level=2)
-
-                    # Add the formatted content for that section
-                    for item in formatted_content:
-                        if item['type'] == 'heading':
-                            self.doc.add_heading(item['text'], level=item['level'])
-                        elif item['type'] == 'paragraph':
-                            para = self.doc.add_paragraph()
-                            self.add_formatted_text(para, item['text'])
-                        elif item['type'] == 'bullets':
-                            for point in item['points']:
-                                bullet_para = self.doc.add_paragraph(style='List Bullet')
-                                self.add_formatted_text(bullet_para, point)
-
-                else:
-                    # Handle any other sections as plain paragraphs (just in case)
-                    for item in formatted_content:
-                        if item['type'] == 'heading':
-                            self.doc.add_heading(item['text'], level=item['level'])
-                        elif item['type'] == 'paragraph':
-                            para = self.doc.add_paragraph()
-                            self.add_formatted_text(para, item['text'])
-                        elif item['type'] == 'bullets':
-                            for point in item['points']:
-                                bullet_para = self.doc.add_paragraph(style='List Bullet')
-                                self.add_formatted_text(bullet_para, point)
-
-            # Save the document with the given file name passed as a separate argument
             self.save_document(file_name)
         except Exception as e:
             logger.error(f"[{self.name}] Error in add_page: {e}")
