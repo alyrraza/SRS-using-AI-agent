@@ -132,6 +132,26 @@ In the Streamlit interface:
 
 ---
 
+## How to Use
+
+To get started:
+
+- Clone the repository
+- Install the required dependencies
+- Run the Streamlit app
+
+```bash
+# Step 1: Clone the repo
+git clone https://github.com/alyrraza/SRS-using-AI-agent
+cd SRS-using-AI-agent
+
+# Step 2: Install dependencies
+pip install -r requirements.txt
+
+# Step 3: Run the app
+streamlit run main.py
+```
+
 ##  Benefits for Software Teams
 
 -  Saves time in SRS documentation
